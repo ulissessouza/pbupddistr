@@ -1,0 +1,12 @@
+
+1- Parar serviços e          |
+   subir appserver exclusivo | 
+2- Aplicar patch             | appserver.exe -compile -applypatch -files=D:\totvs\patch\tttp120.ptm -env=advplc
+3- Descompactar pacotes      | montasdfsystemload.prw
+4- Executar o updDistr       | Job appserver
+5- Reiniciar Serviços        | 
+
+https://youtu.be/mcd7lqpUzIA?t=1024
+
+
+https://www.youtube.com/watch?v=Du04jBWrv4A&ab_channel=Filhodanuvem
