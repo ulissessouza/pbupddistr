@@ -1,5 +1,4 @@
 #INCLUDE "TOTVS.CH"
-#INCLUDE "FILEIO.CH"
 
 Static __cConsoleLg   := GetPvProfString("GENERAL", "ConsoleFile", "console.log", GetAdv97())
 Static __cSystemload  := "\systemload\"
@@ -55,7 +54,7 @@ User Function MontaSDF
 
     // ja cria o arquivo na pasta systemload
     MakeJson(__cSystemload,aLogin[02],aSM0)
-    
+
     RpcClearEnv()
 
     AGORAISM := StartJob("UPDDISTR", GetEnvServer(), .T.)
@@ -293,6 +292,222 @@ Static function LeArquivo()
     endif
 
 Return cStatus
+
+/*/{Protheus.doc} GetSM0
+Retorna tabelas SM0
+@type function
+@version 12.1.33
+@author Ulisses Souza
+@since 02/03/2022
+@return array, empresas do sistema
+/*/
+Static Function GetSM0()
+    Local nI
+    Local cCodSM0
+    Local cArqSX2
+    Local aSM0 := {}
+    Local aRet := {}
+
+    OpenSm0()
+
+    aSM0 := FWAllGrpCompany()
+
+    For nI := 1 To Len(aSM0)
+        cCodSM0 := aSM0[nI]
+        cArqSX2 := "SX2"+cCodSM0+"0"
+        // MPSysSqlName("SX2") // Retorna o nome fisico de uma tabela.
+        If aScan(aRet, cCodSM0 ) == 0
+            OpenSxs(,,,,cCodSM0,cArqSX2,"SX2",,.F.)
+            If Select(cArqSX2) > 0
+                aAdd(aRet,cCodSM0)
+            Endif
+        EndIf
+        If Select(cArqSX2) > 0
+            (cArqSX2)->(DbCloseArea())
+        EndIf
+    Next nI
+
+    RpcClearEnv()
+
+Return aRet
+
+/*/{Protheus.doc} GetFill
+Retorna as Filiais
+@type function
+@version 12.1.33
+@author Ulisses Souza
+@since 02/03/2022
+@param cSM0, character, Dados SM0
+@return array, array com as Filiais
+/*/
+Static Function GetFill(cSM0)
+    Local aFill := {}
+    OpenSm0()
+    aFill := FWAllFilial(,,cSM0)
+    RpcClearEnv()
+Return aFill
+
+
+/*/{Protheus.doc} ToBrackets
+.
+@type Function
+@author alessandro@farias.net.br
+@since 26/02/2022
+@version 1.0
+/*/
+Static Function ToBrackets(cString,cToken)
+    Local cRet     := ""
+    Default cString := ''
+    Default cToken  := ','
+    cRet := FormatIn(StrTran(cString,"'",''),cToken)
+    cRet := "["+Substr(cRet,2,Len(cRet))
+    cRet := Substr(cRet,1,Len(cRet)-1)+"]"
+Return cRet
+
+/*/{Protheus.doc} MakeJson
+.
+@type Function
+@author alessandro@farias.net.br
+@since 26/02/2022
+@version 1.0
+/*/
+Static Function MakeJson(Systemload,SenhaUpd,Empresas)
+
+    Local cFile  := Systemload + "upddistr_param.json"
+    Local cTexto := ""
+    Local nHdle
+    Local nN
+    
+    cTexto += '{' + CRLF
+    cTexto += '   "password":"'+SenhaUpd+'",' + CRLF
+    cTexto += '   "simulacao":false,' + CRLF
+    cTexto += '   "localizacao":"BRA",' + CRLF
+    cTexto += '   "sixexclusive":true,' + CRLF
+    cTexto += '   "empresas":[' + CRLF
+    For nN := 1 To Len(Empresas)
+        cTexto += '      "'+Empresas[nN]+'"' +iif(nN<Len(Empresas),',','')+ CRLF
+    Next nN
+    cTexto += '   ],' + CRLF
+    cTexto += '   "logprocess":false,' + CRLF
+    cTexto += '   "logatualizacao":false,' + CRLF
+    cTexto += '   "logwarning":false,' + CRLF
+    cTexto += '   "loginclusao":false,' + CRLF
+    cTexto += '   "logcritical":true,' + CRLF
+    cTexto += '   "updstop":false,' + CRLF
+    cTexto += '   "oktoall":true,' + CRLF
+    cTexto += '   "deletebkp":true,' + CRLF
+    cTexto += '   "keeplog":true' + CRLF
+    cTexto += '}' + CRLF
+
+    fErase(cFile)
+    
+    nHdle := FCreate(cFile,0)
+    
+    FWrite(nHdle,cTexto)
+    FClose(nHdle)
+
+Return
+
+/*/{Protheus.doc} DistrLogin
+.
+@type Function
+@author alessandro@farias.net.br
+@since 26/02/2022
+@version 1.0
+/*/
+Static Function DistrLogin()
+    Local oBmp
+    Local oPanel
+    Local oDlg
+    Local cUser	:= Space(25)
+    Local cPsw	:= Space(20)
+    Local oOk
+    Local oCancel
+    Local lEndDlg	:= .F.
+    Private oMainWnd
+    DEFINE MSDIALOG oDlg FROM 000,000 TO 135,305 TITLE 'Autenticação' PIXEL OF oMainWnd
+    @ 000,000 BITMAP oBmp RESNAME 'APLOGO' SIZE 65,37 NOBORDER PIXEL
+    oBmp:Align := CONTROL_ALIGN_RIGHT
+    @ 000,000 MSPANEL oPanel OF oDlg
+    oPanel:Align := CONTROL_ALIGN_ALLCLIENT
+    @05,05 SAY 'Usuário' SIZE 60,07 OF oPanel PIXEL
+    @13,05 MSGET cUser SIZE 80,08 OF oPanel PIXEL
+    @28,05 SAY 'Senha' SIZE 53,07 OF oPanel PIXEL
+    @36,05 MSGET cPsw SIZE 80,08 PASSWORD OF oPanel PIXEL
+    DEFINE SBUTTON oOk FROM 53,27 TYPE 1 ENABLE OF oPanel PIXEL ACTION( iif( !VldLogin(Alltrim(cUser),Alltrim(cPsw)), MsgStop('Usuário não autorizado'),iif( logupd(cUser), (lEndDlg := .T.,oDlg:End()),Final('Cancelado!') ) ) )
+    DEFINE SBUTTON oCancel FROM 53,57 TYPE 2 ENABLE OF oPanel PIXEL ACTION (lEndDlg := .T.,Final('Cancelado pelo operador'))
+    ACTIVATE MSDIALOG oDlg CENTERED VALID lEndDlg
+Return { Alltrim (cUser),Alltrim (cPsw) }
+
+/*/{Protheus.doc} VldLogin
+Validar o login
+@type function
+@version 12.1.33
+@author Ulisses Souza
+@since 02/03/2022
+@param cUser, character, Usuario
+@param cPsw, character, Senha
+@return logical, Login autorizada?
+/*/
+Static Function VldLogin(cUser,cPsw)
+    Local lRet	:= .F.
+    Local aRetUser
+    PswOrder(2) //1 ID; 2 Nome
+    If PswSeek(cUser,.T.)
+        If ! PswName(cPsw)
+            Final('Senha Invalida!')
+        else
+            aRetUser		:= PswRet(1)
+            __cUserID	:= aRetUser[1][1]
+            If FwIsAdmin(__cUserID)
+                __cUserID := Nil
+                lRet := .T.
+            else
+                Final('Usuario nao faz parte do grupo de administradores!')
+            EndIf
+        Endif
+    EndIf
+Return lRet
+
+/*/{Protheus.doc} logupd
+Log do Update Sqlite
+@type function
+@version 12.1.33
+@author Ulisses Souza
+@since 02/03/2022
+@param login, logical, Login
+/*/
+Static function logupd(login)
+    // tratar no futuro
+Return .T.
+
+/*/{Protheus.doc} PbRetSX
+Retorna tabelas SX's
+@type function
+@version 12.1.33
+@author Ulisses Souza
+@since 02/03/2022
+@return array, tabelas SX
+/*/
+Static Function PbRetSX
+    Local aRet := {}
+    aAdd(aRet,"SX1")
+    aAdd(aRet,"SX2")
+    aAdd(aRet,"SX3")
+    aAdd(aRet,"SX5")
+    aAdd(aRet,"SX6")
+    aAdd(aRet,"SX7")
+    aAdd(aRet,"SX9")
+    aAdd(aRet,"SXA")
+    aAdd(aRet,"SXB")
+    aAdd(aRet,"SXG")
+    aAdd(aRet,"SXQ")
+    aAdd(aRet,"SXR")
+    aAdd(aRet,"XXA")
+    aAdd(aRet,"SIX")
+Return aRet
+
+
 /*
 https://tdn.totvs.com/display/public/LMPING/UPDDISTR+executed+via+Job
 [UPDJOB]
@@ -333,172 +548,3 @@ oktoall        = Corrigir error automaticamente
 deletebkp      = Eliminar arquivos de backup ao término da atualização de cada tabela
 keeplog        = Manter o arquivo de log existente
 */
-
-Static Function GetSM0()
-    Local nI
-    Local cCodSM0
-    Local cArqSX2
-    Local aSM0 := {}
-    Local aRet := {}
-
-    OpenSm0()
-
-    aSM0 := FWAllGrpCompany()
-
-    For nI := 1 To Len(aSM0)
-        cCodSM0 := aSM0[nI]
-        cArqSX2 := "SX2"+cCodSM0+"0"
-        // MPSysSqlName("SX2") // Retorna o nome fisico de uma tabela.
-        If aScan(aRet, cCodSM0 ) == 0
-            OpenSxs(,,,,cCodSM0,cArqSX2,"SX2",,.F.)
-            If Select(cArqSX2) > 0
-                aAdd(aRet,cCodSM0)
-            Endif
-        EndIf
-        If Select(cArqSX2) > 0
-            (cArqSX2)->(DbCloseArea())
-        EndIf
-    Next nI
-
-    RpcClearEnv()
-
-Return aRet
-
-
-Static Function GetFill(cSM0)
-    Local aFill := {}
-    OpenSm0()
-    aFill := FWAllFilial(,,cSM0)
-    RpcClearEnv()
-Return aFill
-
-
-/*/{Protheus.doc} ToBrackets
-.
-@type Function
-@author alessandro@farias.net.br
-@since 26/02/2022
-@version 1.0
-/*/
-Static Function ToBrackets(cString,cToken)
-    Local cRet     := ""
-    Default cString := ''
-    Default cToken  := ','
-    cRet := FormatIn(StrTran(cString,"'",''),cToken)
-    cRet := "["+Substr(cRet,2,Len(cRet))
-    cRet := Substr(cRet,1,Len(cRet)-1)+"]"
-Return cRet
-
-/*/{Protheus.doc} MakeJson
-.
-@type Function
-@author alessandro@farias.net.br
-@since 26/02/2022
-@version 1.0
-/*/
-Static Function MakeJson(Systemload,SenhaUpd,Empresas)
-    Local cFile		:= Systemload + "upddistr_param.json"
-    Local cTexto	:= ""
-    Local nHdle
-    Local nN
-    cTexto += '{' + CRLF
-    cTexto += '   "password":"'+SenhaUpd+'",' + CRLF
-    cTexto += '   "simulacao":false,' + CRLF
-    cTexto += '   "localizacao":"BRA",' + CRLF
-    cTexto += '   "sixexclusive":true,' + CRLF
-    cTexto += '   "empresas":[' + CRLF
-    For nN:=1 To Len(Empresas)
-        cTexto += '      "'+Empresas[nN]+'"' +iif(nN<Len(Empresas),',','')+ CRLF
-    Next nN
-    cTexto += '   ],' + CRLF
-    cTexto += '   "logprocess":false,' + CRLF
-    cTexto += '   "logatualizacao":false,' + CRLF
-    cTexto += '   "logwarning":false,' + CRLF
-    cTexto += '   "loginclusao":false,' + CRLF
-    cTexto += '   "logcritical":true,' + CRLF
-    cTexto += '   "updstop":false,' + CRLF
-    cTexto += '   "oktoall":true,' + CRLF
-    cTexto += '   "deletebkp":true,' + CRLF
-    cTexto += '   "keeplog":true' + CRLF
-    cTexto += '}' + CRLF
-    fErase(cFile)
-    nHdle := FCreate(cFile,0)
-    FWrite(nHdle,cTexto)
-    FClose(nHdle)
-Return
-
-/*/{Protheus.doc} DistrLogin
-.
-@type Function
-@author alessandro@farias.net.br
-@since 26/02/2022
-@version 1.0
-/*/
-Static Function DistrLogin()
-    Local oBmp
-    Local oPanel
-    Local oDlg
-    Local cUser	:= Space(25)
-    Local cPsw	:= Space(20)
-    Local oOk
-    Local oCancel
-    Local lEndDlg	:= .F.
-    Private oMainWnd
-    DEFINE MSDIALOG oDlg FROM 000,000 TO 135,305 TITLE 'Autenticação' PIXEL OF oMainWnd
-    @ 000,000 BITMAP oBmp RESNAME 'APLOGO' SIZE 65,37 NOBORDER PIXEL
-    oBmp:Align := CONTROL_ALIGN_RIGHT
-    @ 000,000 MSPANEL oPanel OF oDlg
-    oPanel:Align := CONTROL_ALIGN_ALLCLIENT
-    @05,05 SAY 'Usuário' SIZE 60,07 OF oPanel PIXEL
-    @13,05 MSGET cUser SIZE 80,08 OF oPanel PIXEL
-    @28,05 SAY 'Senha' SIZE 53,07 OF oPanel PIXEL
-    @36,05 MSGET cPsw SIZE 80,08 PASSWORD OF oPanel PIXEL
-    DEFINE SBUTTON oOk FROM 53,27 TYPE 1 ENABLE OF oPanel PIXEL ACTION( iif( !VldLogin(Alltrim(cUser),Alltrim(cPsw)), MsgStop('Usuário não autorizado'),iif( logupd(cUser), (lEndDlg := .T.,oDlg:End()),Final('Cancelado!') ) ) )
-    DEFINE SBUTTON oCancel FROM 53,57 TYPE 2 ENABLE OF oPanel PIXEL ACTION (lEndDlg := .T.,Final('Cancelado pelo operador'))
-    ACTIVATE MSDIALOG oDlg CENTERED VALID lEndDlg
-Return { Alltrim (cUser),Alltrim (cPsw) }
-
-
-Static Function VldLogin(cUser,cPsw)
-    Local lRet	:= .F.
-    Local aRetUser
-    PswOrder(2) //1 ID; 2 Nome
-    If PswSeek(cUser,.T.)
-        If ! PswName(cPsw)
-            Final('Senha Invalida!')
-        else
-            aRetUser		:= PswRet(1)
-            __cUserID	:= aRetUser[1][1]
-            If FwIsAdmin(__cUserID)
-                __cUserID := Nil
-                lRet := .T.
-            else
-                Final('Usuario nao faz parte do grupo de administradores!')
-            EndIf
-        Endif
-    EndIf
-Return lRet
-
-
-Static function logupd(login)
-    // tratar no futuro
-Return .T.
-
-
-Static Function PbRetSX
-    Local aRet := {}
-    aAdd(aRet,"SX1")
-    aAdd(aRet,"SX2")
-    aAdd(aRet,"SX3")
-    aAdd(aRet,"SX5")
-    aAdd(aRet,"SX6")
-    aAdd(aRet,"SX7")
-    aAdd(aRet,"SX9")
-    aAdd(aRet,"SXA")
-    aAdd(aRet,"SXB")
-    aAdd(aRet,"SXG")
-    aAdd(aRet,"SXQ")
-    aAdd(aRet,"SXR")
-    aAdd(aRet,"XXA")
-    aAdd(aRet,"SIX")
-Return aRet
