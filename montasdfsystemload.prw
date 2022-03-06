@@ -1,7 +1,11 @@
 #INCLUDE "TOTVS.CH"
+#INCLUDE "FILEIO.CH"
 
-Static __cConsoleLg   := GetPvProfString("GENERAL", "ConsoleFile", "console.log", GetAdv97())
-Static __cSystemload  := "\systemload\"
+Static __cConsoleLg	:= GetPvProfString("GENERAL", "ConsoleFile", "console.log", GetAdv97())
+Static __cSystemload	:= "\systemload\"
+Static __cServerPath	:= lower(GetPvProfString(GetEnvServer(),"APPSERVER","ERRO",GetADV97()))
+Static __lInDB			:= .F.
+
 
 /*/{Protheus.doc} MontaSDF
 Programa para gerar os arquivos sdfbra.txt e hlpdfpor.txt organizadamente em uma pasta systemload para facilitar a aplicação do upddistr
@@ -12,73 +16,52 @@ Programa para gerar os arquivos sdfbra.txt e hlpdfpor.txt organizadamente em uma
 @example U_MontaSDF
 /*/
 User Function MontaSDF
-
     Local cOrigem  := ""
     Local cDestino := ""
     Local cEmpresas:= ""
     Local aDir1    := {}
     Local ndir1
-    Local aSM0      := {}
-    Local aFill     := {}
-    Local aLogin    := {}
-    Local lInDB
-    Local aFiles
-
-    //****************** rodar -> FwRebuildIndex
+    Local aSM0 		:= {}
+    Local aFill		:= {}
+    Local aLogin	:= {}
+    ****************** lembrar de rodar -> FwRebuildIndex
+    // criar tela para o analista informar o caminho + nome completo do appserver para aplicacao de ptm
+    If __cServerPath	== "erro"
+        WriteSrvProfString("APPSERVER", "c:\r33\protheus\bin\appserver\appserver.exe")
+        __cServerPath	:= lower(GetPvProfString(GetEnvServer(),"APPSERVER","ERRO",GetADV97()))
+    Endif
     //OpenSM0Excl() //Realiza a abertura do dicionario Exclusivo para validar se ha alguem acessando
     //RpcClearEnv()
-
+    FwMakeDir("c:\tmpzip\")
     aLogin := DistrLogin()
-    aSM0   := GetSM0()
-    aFill  := GetFill(aSM0[01])
+    aSM0  := GetSM0()
+    aFill := GetFill(aSM0[01])
     cEmpresas := ToBrackets(ArrTokStr(aSM0,","),',')
-    cOrigem   := cGetFile('*.*', "Diretorio dos pacotes", 1, "c:\tmpzip\", .F., GETF_RETDIRECTORY+GETF_NETWORKDRIVE+GETF_LOCALHARD)
-    cDestino  := cGetFile('*.*', "Diretorio dos pacotes", 1, "c:\tmpzip\", .F., GETF_RETDIRECTORY+GETF_NETWORKDRIVE+GETF_LOCALHARD)
-
+    cOrigem := cGetFile('*.*', "Diretorio dos pacotes", 1, "c:\tmpzip\", .F., GETF_RETDIRECTORY+GETF_NETWORKDRIVE+GETF_LOCALHARD)
+    cDestino := cGetFile('*.*', "Diretorio dos pacotes", 1, "c:\tmpzip\", .F., GETF_RETDIRECTORY+GETF_NETWORKDRIVE+GETF_LOCALHARD)
     // sou obrigado a dar um rpc em qualquer empresa para ter acesso ao \systemload\ para excluir os aquivos "lixo" e copia o .json
     RpcClearEnv()
-
     If ! RpcSetEnv(aSM0[01],aFill[01],aLogin[01],aLogin[02],"CFG","U_PBDISTRR")
         Final("Erro ao efetuar teste de acesso!")
     Endif
-
-    lInDB := MPDicInDB()
-
-    // limpeza antes de executar
-    If File(__cSystemload+"result.json")
-        fErase(__cSystemload+"result.json")
-    Endif
+    __lInDB		:= MPDicInDB()
+    // limpeza inicial antes de executar o 1o pacote
+    CleanSystemLoad()
     If File(__cSystemload+"upddistr_param.json")
         fErase(__cSystemload+"upddistr_param.json")
     Endif
-
     // ja cria o arquivo na pasta systemload
     MakeJson(__cSystemload,aLogin[02],aSM0)
+    RpcClearEnv() // todas as tabelas devem estar fechadas senao o job do upddistr nao irá rodar
+    ConOut("local do console.log -> "+__cConsoleLg)
 
-    RpcClearEnv()
-
-    AGORAISM := StartJob("UPDDISTR", GetEnvServer(), .T.)
+    //cOrigem  := SuperGetMV("MV_XORIGEM" ,.F.,"c:\patch_totvs\")
+    //cDestino := SuperGetMV("MV_XDESTINO",.F.,"c:\tmpzip\")
 
     FwMakeDir(cDestino)
     FwMakeDir(cOrigem + "processado\")
     FwMakeDir(cOrigem + "pendente\")
     FwMakeDir(cOrigem + "erro\")
-    // limpeza antes de executar
-    aEval(Directory(__cSystemload +"sdf*.txt"), { |aFiles| fErase(__cSystemload + aFiles[1]) })
-    aEval(Directory(__cSystemload +"hlpdf*.txt"), { |aFiles| fErase(__cSystemload + aFiles[1]) })
-    aEval(Directory(__cSystemload +"sigah*.h*"), { |aFiles| fErase(__cSystemload + aFiles[1]) })
-    If ! lInDB
-        aEval(Directory(__cSystemload +"*.dtc"), { |aFiles| fErase(__cSystemload + aFiles[1]) })
-        aEval(Directory(__cSystemload +"*.cdx"), { |aFiles| fErase(__cSystemload + aFiles[1]) })
-        aEval(Directory(__cSystemload +"*.idx"), { |aFiles| fErase(__cSystemload + aFiles[1]) })
-    Else
-        aFiles := PbRetSX()
-        For nDir1:=1 To Len(aFiles)
-            If TcCanOpen(aFiles[nDir1])
-                TcDelFile(aFiles[nDir1])
-            Endif
-        Next nDir1
-    Endif
     aDir1 := Directory(cOrigem + "*.zip","A")
 
     For ndir1 := 1 To Len(aDir1)
@@ -92,8 +75,8 @@ User Function MontaSDF
             if __CopyFile( cOrigem + aDir1[ndir1][1], cOrigem + "erro\" + aDir1[ndir1][1] )
                 fErase(cOrigem + aDir1[ndir1][1])
             endif
-            aEval(Directory(cOrigem + "\sdfbra.txt"), { |aFile| __CopyFile( cOrigem +aFile[1] , cOrigem + "pendentes\" + aFile[1]) })
-            aEval(Directory(cOrigem + "\hlpdfpor.txt"), { |aFile| __CopyFile( cOrigem +aFile[1] , cOrigem + "pendentes\" + aFile[1]) })
+            aEval(Directory(cOrigem + "\sdfbra.txt"), { |aFile| __CopyFile( cOrigem +aFile[1] , cOrigem + "pendente\" + aFile[1]) })
+            aEval(Directory(cOrigem + "\hlpdfpor.txt"), { |aFile| __CopyFile( cOrigem +aFile[1] , cOrigem + "pendente\" + aFile[1]) })
             ndir1 := Len(aDir1)
         endif
 
@@ -101,12 +84,13 @@ User Function MontaSDF
     If File(__cSystemload+"upddistr_param.json")
         fErase(__cSystemload+"upddistr_param.json")
     Endif
+    RpcClearEnv()
+    RpcSetEnv(aSM0[01],aFill[01],aLogin[01],aLogin[02],"CFG","U_PBDISTRR")
 Return
-
 /*/{Protheus.doc} XListZip
 Função para descompactar o arquivo zip na pasta temporaria
 @type function
-@version 12.1.23
+@version 1.0
 @author Ulisses Souza
 @since 22/02/2022
 @param cFile, character, Arquivo origem
@@ -168,25 +152,18 @@ Static Function XListZip(cFile, cOrigem, cDestinoOri)
 
         //Copia arquivos para o servidor
         fCpySrv( cDestinoOri + "systemload\" )
-
+        // executar o job
+        RnUpddistr(cNome)
         //Verifica o arquivo de retorno para iniciar outro pacote
-        lCont := .T.
-        while !lCont
-            cStatus := LeArquivo()
-            If cStatus == "2"
-                lCont := .F.
-                lRet  := .T.
-
-            elseif cStatus == "3"
-                lCont := .F.
-                lRet  := .F.
-
-            EndIf
-        Enddo
+        cStatus := LeArquivo()
+        If cStatus == "2"
+            lRet  := .T.
+        elseif cStatus $ "1,3"
+            lRet  := .F.
+        EndIf
     endif
 
 Return lRet
-
 /*/{Protheus.doc} fCpySrv
 Copia os arquivos da pasta temporaria para a systemload do sistema
 @type function
@@ -198,60 +175,30 @@ Copia os arquivos da pasta temporaria para a systemload do sistema
 /*/
 Static Function fCpySrv( cDirAux )
     Local nAtual  := 0
-    Local cDirSrv := GetSrvProfString("RootPath","") + "\systemload\"
+    Local cDirSrv := GetSrvProfString("RootPath","") + __cSystemload
     Local aDirSrv := Directory(cDirSrv + "*.*","A")
-
-    Local cDirBkp := GetSrvProfString("RootPath","") + "\systemload-" + dtos(date()) + strtran(time(),":","-") + "\"
+    Local cDirBkp := GetSrvProfString("RootPath","") + __cSystemload + "upddistr-" + Left(StrTran(StrTran(FWTimeStamp(5,Date(),Time()),"-",""),":",""),15) + "\"
     Local aDirAux := Directory(cDirAux + "*.txt","A")
-    Local lCont   := .T.
 
     //Cria bkp Diretorio
     FwMakeDir(cDirBkp)
 
-    //Percorre os arquivos e copia para pasta BKp
+    //Percorre os arquivos e copia para pasta bkp somentes os arquivos do pacote
     For nAtual := 1 To Len(aDirSrv)
-
-        //Pegando o nome do arquivo
-        cNomArq := aDirSrv[nAtual][1]
-
-        //Copia o arquivo para a pasta do sistema
-        __CopyFile( cDirSrv + cNomArq , cDirBkp + cNomArq )
-
+        cNomArq := lower(aDirSrv[nAtual][1])
+        If "sdfbra.txt" == cNomArq .Or. "hlpdfpor.txt" == cNomArq
+            //Copia o arquivo para a pasta do sistema
+            __CopyFile( cDirSrv + cNomArq , cDirBkp + cNomArq )
+        Endif
     Next nAtual
-
-
-    //Limpa pasta systemload
-    while lCont
-        aEval(Directory(cDirSrv +"*.txt"), { |aFile| fErase(cDirSrv + aFile[1]) })
-
-        if len(  Directory(cDirSrv+"*.txt","A") ) == 0
-            lCont := .F.
-        endif
-
-    enddo
-
-    //Apaga arquivos de retorno do UpdDistr
-    fErase(cDirSrv + "result.json")
-    //Apaga pasta de dicionarios extras
-    DirRemove(cDirSrv + "refedict")
-
+    CleanSystemLoad()
     //Percorre os arquivos
     For nAtual := 1 To Len(aDirAux)
-
-        //Pegando o nome do arquivo
-        cNomArq := aDirAux[nAtual][1]
-
-        //Copia o arquivo para a pasta do sistema
-        lRet := __CopyFile( cDirAux + cNomArq , cDirSrv + cNomArq )
-
-        if !lRet
-            exit
-        endif
-
+        cNomArq := lower(aDirAux[nAtual][1])
+        //Faz a copia do arquivo para a pasta do Systemload
+        __CopyFile( cDirAux + cNomArq , __cSystemload + cNomArq )
     Next nAtual
-
-Return lRet
-
+Return
 /*/{Protheus.doc} LeArquivo
 Função para ler o arquivo no final do UpdDisttr
 @type function
@@ -265,53 +212,95 @@ Função para ler o arquivo no final do UpdDisttr
 /*/
 Static function LeArquivo()
     Local oFile   := nil
-    Local cLinha  := ""
-    Local cStatus := "0"
-    Local cFile   := GetSrvProfString("rootPath","") + "\systemload\" + "result.json"
-
+    Local cStatus := "1" //Upddistr não Finalizado
+    Local cFile   := ""
+    Local oJson, uRet, aJson
+    Local cJson   := ""
+    //+---------------------------------------------------+
+    //Rodando no Servidor aonde o Protheus está instalado |
+    //+---------------------------------------------------+
+    cFile := GetSrvProfString("rootPath","") + __cSystemload + "result.json"
+    //+-------------------------------------------------------+
+    //Se estiver rodando em uma Maquina Remote muda o caminho |
+    //+-------------------------------------------------------+
+    If !File(cFile)
+        cFile := __cSystemload + "result.json"
+    EndIf
+    //+---------------------------------------------------------------------+
+    //Se não encontrar o arquivo o sistema apresenta mensagem de erro e sai |
+    //+---------------------------------------------------------------------+
+    If !File(cFile)
+        Alert("Erro ao tentar localizar o arquivo result.json")
+        Return cStatus
+    EndIf
     oFile := FWFileReader():New(cFile)
-
-    if (oFile:Open())
-        while (oFile:hasLine())
-            cLinha := oFile:GetLine()
-        end
+    If oFile:Open()
+        cJson	:= oFile:FullRead()
         oFile:Close()
-    endif
-
-    if !Empty(cLinha)
-        if !("success" $ cLinha)
-            //Upddistr Finalizado com sucesso
-            cStatus := "2"
-        else
-            //Upddistr Finalizado com erro
-            cStatus := "3"
-        endif
-
-        //Upddistr não Finalizado
-        cStatus := "1"
-    endif
+    Endif
+    oJson	:= JsonObject():new()
+    uRet	:= oJson:FromJson(cJson)
+    If ValType(uRet) <> "U"
+        Return cStatus
+    Endif
+    aJson := oJson:GetNames()
+    oJson:GetJsonObject(aJson[1])
+    If "success" $ lower(oJson:GetJsonObject(aJson[1]))
+        cStatus := "2" //Upddistr Finalizado com sucesso
+    Else
+        cStatus := "3" //Upddistr Finalizado com erro
+    Endif
+    oJson := Nil
 
 Return cStatus
-
-/*/{Protheus.doc} GetSM0
-Retorna tabelas SM0
-@type function
-@version 12.1.33
-@author Ulisses Souza
-@since 02/03/2022
-@return array, empresas do sistema
-/*/
+/*
+https://tdn.totvs.com/display/public/LMPING/UPDDISTR+executed+via+Job
+[UPDJOB]
+MAIN=UPDDISTR
+ENVIRONMENT=P12
+[ONSTART]
+Jobs=UPDJOB
+RefreshRate=900
+2. Na pasta Systemload, crie um arquivo JSON chamado upddistr_param.json, com o seguinte conteúdo:
+{
+	"password"      : "senha",
+	"simulacao"     : false,
+	"localizacao"   : "BRA",
+	"sixexclusive"  : true,
+	"empresas"      : ["99","01","03"],
+	"logprocess"    : false,
+	"logatualizacao": false,
+	"logwarning"    : false,
+	"loginclusao"   : false,
+	"logcritical"   : true,
+	"updstop"       : false,
+	"oktoall"       : true,
+	"deletebkp"     : true,
+	"keeplog"       : false
+}
+password       = Senha do usuário administrador
+simulacao      = Habilita o modo simulação, onde nenhuma modificação é efetivada
+localizacao    = País que deve ser utilizado
+sixexclusive   = Utilizar o arquivo de índices por empresa
+empresas       = Lista das empresas que serão migradas, separadas por vírgula
+logprocess     = Log de Processo
+logatualizacao = Log de Atualização
+logwarning     = Log de Warning Error
+loginclusao    = Log de Inclusão
+logcritical    = Log de Critical Error
+updstop        = Permite interromper processo durante execução
+oktoall        = Corrigir error automaticamente
+deletebkp      = Eliminar arquivos de backup ao término da atualização de cada tabela
+keeplog        = Manter o arquivo de log existente
+*/
 Static Function GetSM0()
     Local nI
     Local cCodSM0
     Local cArqSX2
     Local aSM0 := {}
     Local aRet := {}
-
     OpenSm0()
-
     aSM0 := FWAllGrpCompany()
-
     For nI := 1 To Len(aSM0)
         cCodSM0 := aSM0[nI]
         cArqSX2 := "SX2"+cCodSM0+"0"
@@ -326,30 +315,15 @@ Static Function GetSM0()
             (cArqSX2)->(DbCloseArea())
         EndIf
     Next nI
-
     RpcClearEnv()
-
 Return aRet
-
-/*/{Protheus.doc} GetFill
-Retorna as Filiais
-@type function
-@version 12.1.33
-@author Ulisses Souza
-@since 02/03/2022
-@param cSM0, character, Dados SM0
-@return array, array com as Filiais
-/*/
 Static Function GetFill(cSM0)
     Local aFill := {}
     OpenSm0()
     aFill := FWAllFilial(,,cSM0)
     RpcClearEnv()
 Return aFill
-
-
 /*/{Protheus.doc} ToBrackets
-.
 @type Function
 @author alessandro@farias.net.br
 @since 26/02/2022
@@ -363,28 +337,24 @@ Static Function ToBrackets(cString,cToken)
     cRet := "["+Substr(cRet,2,Len(cRet))
     cRet := Substr(cRet,1,Len(cRet)-1)+"]"
 Return cRet
-
 /*/{Protheus.doc} MakeJson
-.
 @type Function
 @author alessandro@farias.net.br
 @since 26/02/2022
 @version 1.0
 /*/
 Static Function MakeJson(Systemload,SenhaUpd,Empresas)
-
-    Local cFile  := Systemload + "upddistr_param.json"
-    Local cTexto := ""
+    Local cFile		:= Systemload + "upddistr_param.json"
+    Local cTexto	:= ""
     Local nHdle
     Local nN
-    
     cTexto += '{' + CRLF
     cTexto += '   "password":"'+SenhaUpd+'",' + CRLF
     cTexto += '   "simulacao":false,' + CRLF
     cTexto += '   "localizacao":"BRA",' + CRLF
     cTexto += '   "sixexclusive":true,' + CRLF
     cTexto += '   "empresas":[' + CRLF
-    For nN := 1 To Len(Empresas)
+    For nN:=1 To Len(Empresas)
         cTexto += '      "'+Empresas[nN]+'"' +iif(nN<Len(Empresas),',','')+ CRLF
     Next nN
     cTexto += '   ],' + CRLF
@@ -398,18 +368,12 @@ Static Function MakeJson(Systemload,SenhaUpd,Empresas)
     cTexto += '   "deletebkp":true,' + CRLF
     cTexto += '   "keeplog":true' + CRLF
     cTexto += '}' + CRLF
-
     fErase(cFile)
-    
     nHdle := FCreate(cFile,0)
-    
     FWrite(nHdle,cTexto)
     FClose(nHdle)
-
 Return
-
 /*/{Protheus.doc} DistrLogin
-.
 @type Function
 @author alessandro@farias.net.br
 @since 26/02/2022
@@ -419,7 +383,7 @@ Static Function DistrLogin()
     Local oBmp
     Local oPanel
     Local oDlg
-    Local cUser	:= Space(25)
+    Local cUser	:= Padr('Administrador',25)
     Local cPsw	:= Space(20)
     Local oOk
     Local oCancel
@@ -430,25 +394,14 @@ Static Function DistrLogin()
     oBmp:Align := CONTROL_ALIGN_RIGHT
     @ 000,000 MSPANEL oPanel OF oDlg
     oPanel:Align := CONTROL_ALIGN_ALLCLIENT
-    @05,05 SAY 'Usuário' SIZE 60,07 OF oPanel PIXEL
-    @13,05 MSGET cUser SIZE 80,08 OF oPanel PIXEL
-    @28,05 SAY 'Senha' SIZE 53,07 OF oPanel PIXEL
-    @36,05 MSGET cPsw SIZE 80,08 PASSWORD OF oPanel PIXEL
+    @ 05,05 SAY 'Usuário' SIZE 60,07 OF oPanel PIXEL
+    @ 13,05 MSGET cUser SIZE 80,08 OF oPanel PIXEL When .F.
+    @ 28,05 SAY 'Senha' SIZE 53,07 OF oPanel PIXEL
+    @ 36,05 MSGET cPsw SIZE 80,08 PASSWORD OF oPanel PIXEL
     DEFINE SBUTTON oOk FROM 53,27 TYPE 1 ENABLE OF oPanel PIXEL ACTION( iif( !VldLogin(Alltrim(cUser),Alltrim(cPsw)), MsgStop('Usuário não autorizado'),iif( logupd(cUser), (lEndDlg := .T.,oDlg:End()),Final('Cancelado!') ) ) )
     DEFINE SBUTTON oCancel FROM 53,57 TYPE 2 ENABLE OF oPanel PIXEL ACTION (lEndDlg := .T.,Final('Cancelado pelo operador'))
     ACTIVATE MSDIALOG oDlg CENTERED VALID lEndDlg
 Return { Alltrim (cUser),Alltrim (cPsw) }
-
-/*/{Protheus.doc} VldLogin
-Validar o login
-@type function
-@version 12.1.33
-@author Ulisses Souza
-@since 02/03/2022
-@param cUser, character, Usuario
-@param cPsw, character, Senha
-@return logical, Login autorizada?
-/*/
 Static Function VldLogin(cUser,cPsw)
     Local lRet	:= .F.
     Local aRetUser
@@ -468,29 +421,12 @@ Static Function VldLogin(cUser,cPsw)
         Endif
     EndIf
 Return lRet
-
-/*/{Protheus.doc} logupd
-Log do Update Sqlite
-@type function
-@version 12.1.33
-@author Ulisses Souza
-@since 02/03/2022
-@param login, logical, Login
-/*/
 Static function logupd(login)
     // tratar no futuro
 Return .T.
-
-/*/{Protheus.doc} PbRetSX
-Retorna tabelas SX's
-@type function
-@version 12.1.33
-@author Ulisses Souza
-@since 02/03/2022
-@return array, tabelas SX
-/*/
 Static Function PbRetSX
     Local aRet := {}
+    aAdd(aRet,"SIX")
     aAdd(aRet,"SX1")
     aAdd(aRet,"SX2")
     aAdd(aRet,"SX3")
@@ -500,51 +436,59 @@ Static Function PbRetSX
     aAdd(aRet,"SX9")
     aAdd(aRet,"SXA")
     aAdd(aRet,"SXB")
+    aAdd(aRet,"SXD")
     aAdd(aRet,"SXG")
     aAdd(aRet,"SXQ")
     aAdd(aRet,"SXR")
+    aAdd(aRet,"XAC")
+    aAdd(aRet,"XB3")
+    aAdd(aRet,"XBA")
     aAdd(aRet,"XXA")
-    aAdd(aRet,"SIX")
 Return aRet
-
-
-/*
-https://tdn.totvs.com/display/public/LMPING/UPDDISTR+executed+via+Job
-[UPDJOB]
-MAIN=UPDDISTR
-ENVIRONMENT=P12
-[ONSTART]
-Jobs=UPDJOB
-RefreshRate=900
-2. Na pasta Systemload, crie um arquivo JSON chamado upddistr_param.json, com o seguinte conteúdo:
-{
-    "password"      : "senha",
-    "simulacao"     : false,
-    "localizacao"   : "BRA",
-    "sixexclusive"  : true,
-    "empresas"      : ["99","01","03"],
-    "logprocess"    : false,
-    "logatualizacao": false,
-    "logwarning"    : false,
-    "loginclusao"   : false,
-    "logcritical"   : true,
-    "updstop"       : false,
-    "oktoall"       : true,
-    "deletebkp"     : true,
-    "keeplog"       : false
-}
-password       = Senha do usuário administrador
-simulacao      = Habilita o modo simulação, onde nenhuma modificação é efetivada
-localizacao    = País que deve ser utilizado
-sixexclusive   = Utilizar o arquivo de índices por empresa
-empresas       = Lista das empresas que serão migradas, separadas por vírgula
-logprocess     = Log de Processo
-logatualizacao = Log de Atualização
-logwarning     = Log de Warning Error
-loginclusao    = Log de Inclusão
-logcritical    = Log de Critical Error
-updstop        = Permite interromper processo durante execução
-oktoall        = Corrigir error automaticamente
-deletebkp      = Eliminar arquivos de backup ao término da atualização de cada tabela
-keeplog        = Manter o arquivo de log existente
-*/
+/*/{Protheus.doc} RnUpddistr
+@type Function
+@author alessandro@farias.net.br
+@since 01/03/2022
+@version 1.0
+@example U_MontaSDF
+/*/
+Static Function RnUpddistr(cMsg)
+    FWMonitorMsg("PBUPD "+cMsg)
+    If LockByName( "RnUpddistr",.F.,.F.,.T. )
+        StartJob("UPDDISTR", GetEnvServer(), .T.)
+    Endif
+    UnlockByName( "RnUpddistr",.F.,.F.,.T. )
+Return
+/*/{Protheus.doc} CleanSystemLoad
+faz a limpeza do systemload
+@type Function
+@author alessandro@farias.net.br
+@since 01/03/2022
+@version 1.0
+@example U_MontaSDF
+/*/
+Static Function CleanSystemLoad()
+    Local nDir1
+    Local aFiles
+    // limpeza dos pacotes antes de executar o pacote
+    aEval(Directory(__cSystemload +"sdf*.txt")  , { |aFiles| fErase(__cSystemload + aFiles[1]) })
+    aEval(Directory(__cSystemload +"hlpdf*.txt"), { |aFiles| fErase(__cSystemload + aFiles[1]) })
+    aEval(Directory(__cSystemload +"sigah*.h*") , { |aFiles| fErase(__cSystemload + aFiles[1]) })
+    aEval(Directory(__cSystemload +"*.dtc"), { |aFiles| fErase(__cSystemload + aFiles[1]) })
+    aEval(Directory(__cSystemload +"*.cdx"), { |aFiles| fErase(__cSystemload + aFiles[1]) })
+    aEval(Directory(__cSystemload +"*.idx"), { |aFiles| fErase(__cSystemload + aFiles[1]) })
+    If __lInDB
+        aFiles := PbRetSX()
+        For nDir1:=1 To Len(aFiles)
+            If TcCanOpen(aFiles[nDir1])
+                TcDelFile(aFiles[nDir1])
+            Endif
+        Next nDir1
+    Endif
+    // limpeza antes de executar
+    If File(__cSystemload+"result.json")
+        fErase(__cSystemload+"result.json")
+    Endif
+    //Apaga pasta de dicionarios extras
+    DirRemove(__cSystemload + "refedict") // só remove se estiver vazia
+Return
