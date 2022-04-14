@@ -1,5 +1,5 @@
 #INCLUDE "TOTVS.CH"
-#INCLUDE "FILEIO.CH"
+//#INCLUDE "FILEIO.CH"
 
 Static __cConsoleLg	:= GetPvProfString("GENERAL", "ConsoleFile", "console.log", GetAdv97())
 Static __cSystemload	:= "\systemload\"
@@ -24,7 +24,8 @@ User Function MontaSDF
     Local aSM0 		:= {}
     Local aFill		:= {}
     Local aLogin	:= {}
-    ****************** lembrar de rodar -> FwRebuildIndex
+    
+    //****************** lembrar de rodar -> FwRebuildIndex
     // criar tela para o analista informar o caminho + nome completo do appserver para aplicacao de ptm
     If __cServerPath	== "erro"
         WriteSrvProfString("APPSERVER", "c:\r33\protheus\bin\appserver\appserver.exe")
@@ -53,7 +54,7 @@ User Function MontaSDF
     // ja cria o arquivo na pasta systemload
     MakeJson(__cSystemload,aLogin[02],aSM0)
     RpcClearEnv() // todas as tabelas devem estar fechadas senao o job do upddistr nao irá rodar
-    ConOut("local do console.log -> "+__cConsoleLg)
+    //ConOut("local do console.log -> "+__cConsoleLg)
 
     //cOrigem  := SuperGetMV("MV_XORIGEM" ,.F.,"c:\patch_totvs\")
     //cDestino := SuperGetMV("MV_XDESTINO",.F.,"c:\tmpzip\")
@@ -317,13 +318,16 @@ Static Function GetSM0()
     Next nI
     RpcClearEnv()
 Return aRet
+
 Static Function GetFill(cSM0)
     Local aFill := {}
     OpenSm0()
     aFill := FWAllFilial(,,cSM0)
     RpcClearEnv()
 Return aFill
+
 /*/{Protheus.doc} ToBrackets
+.
 @type Function
 @author alessandro@farias.net.br
 @since 26/02/2022
@@ -337,7 +341,9 @@ Static Function ToBrackets(cString,cToken)
     cRet := "["+Substr(cRet,2,Len(cRet))
     cRet := Substr(cRet,1,Len(cRet)-1)+"]"
 Return cRet
+
 /*/{Protheus.doc} MakeJson
+.
 @type Function
 @author alessandro@farias.net.br
 @since 26/02/2022
@@ -373,7 +379,9 @@ Static Function MakeJson(Systemload,SenhaUpd,Empresas)
     FWrite(nHdle,cTexto)
     FClose(nHdle)
 Return
+
 /*/{Protheus.doc} DistrLogin
+.
 @type Function
 @author alessandro@farias.net.br
 @since 26/02/2022
@@ -402,6 +410,8 @@ Static Function DistrLogin()
     DEFINE SBUTTON oCancel FROM 53,57 TYPE 2 ENABLE OF oPanel PIXEL ACTION (lEndDlg := .T.,Final('Cancelado pelo operador'))
     ACTIVATE MSDIALOG oDlg CENTERED VALID lEndDlg
 Return { Alltrim (cUser),Alltrim (cPsw) }
+
+
 Static Function VldLogin(cUser,cPsw)
     Local lRet	:= .F.
     Local aRetUser
@@ -421,9 +431,11 @@ Static Function VldLogin(cUser,cPsw)
         Endif
     EndIf
 Return lRet
+
 Static function logupd(login)
     // tratar no futuro
 Return .T.
+
 Static Function PbRetSX
     Local aRet := {}
     aAdd(aRet,"SIX")
@@ -445,7 +457,9 @@ Static Function PbRetSX
     aAdd(aRet,"XBA")
     aAdd(aRet,"XXA")
 Return aRet
+
 /*/{Protheus.doc} RnUpddistr
+.
 @type Function
 @author alessandro@farias.net.br
 @since 01/03/2022
@@ -459,6 +473,7 @@ Static Function RnUpddistr(cMsg)
     Endif
     UnlockByName( "RnUpddistr",.F.,.F.,.T. )
 Return
+
 /*/{Protheus.doc} CleanSystemLoad
 faz a limpeza do systemload
 @type Function
